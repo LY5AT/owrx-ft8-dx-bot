@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 #
 # Installer for the OpenWebRX 2 m FT8/MSK144 DX Telegram bot.
-# Run on the machine that runs OpenWebRX:   sudo ./install.sh
+#
+# Easiest (on the OpenWebRX machine, e.g. a Raspberry Pi over SSH):
+#   curl -fsSLO https://raw.githubusercontent.com/LY5AT/owrx-ft8-dx-bot/main/install.sh && sudo bash install.sh
+#
+# Or from a cloned/extracted folder:  sudo ./install.sh
 #
 set -euo pipefail
 
 SERVICE=ft8-dx-bot
-HERE="$(cd "$(dirname "$0")" && pwd)"
+REPO_RAW="https://raw.githubusercontent.com/LY5AT/owrx-ft8-dx-bot/main"
+HERE="$(cd "$(dirname "$0")" 2>/dev/null && pwd || pwd)"
 
 if [ "$(id -u)" != 0 ]; then
-  echo "Please run with sudo:  sudo ./install.sh"
+  echo "Please run with sudo, e.g.:  sudo bash install.sh"
   exit 1
 fi
 
@@ -17,6 +22,17 @@ RUN_USER="${SUDO_USER:-root}"
 RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
 APP_DIR="${APP_DIR:-$RUN_HOME/$SERVICE}"
 OWRX_SETTINGS="${OWRX_SETTINGS:-/var/lib/openwebrx/settings.json}"
+
+# If run standalone (downloaded just install.sh), fetch the rest from GitHub.
+# Preserve any config.env sitting next to it (e.g. written by the setup page).
+if [ ! -f "$HERE/ft8bot.py" ]; then
+  echo "==> Fetching bot files from GitHub"
+  command -v curl >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y -qq curl; }
+  SRC0="$HERE"; HERE="$(mktemp -d)"
+  curl -fsSL "$REPO_RAW/ft8bot.py"          -o "$HERE/ft8bot.py"
+  curl -fsSL "$REPO_RAW/config.env.example" -o "$HERE/config.env.example"
+  [ -f "$SRC0/config.env" ] && cp "$SRC0/config.env" "$HERE/config.env"
+fi
 
 echo "==> Installing $SERVICE for user '$RUN_USER' into $APP_DIR"
 
@@ -59,21 +75,24 @@ install -d -o "$RUN_USER" -g "$RUN_USER" "$APP_DIR"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$HERE/ft8bot.py" "$APP_DIR/ft8bot.py"
 
 echo "==> 5/7 Telegram configuration"
-if [ -f "$APP_DIR/config.env" ] && grep -q '^TELEGRAM_TOKEN=[0-9]' "$APP_DIR/config.env"; then
+if [ -f "$HERE/config.env" ] && grep -q '^TELEGRAM_TOKEN=[0-9]' "$HERE/config.env"; then
+  install -o "$RUN_USER" -g "$RUN_USER" -m 600 "$HERE/config.env" "$APP_DIR/config.env"
+  echo "    using the config.env you prepared (from the setup page) - no questions needed."
+elif [ -f "$APP_DIR/config.env" ] && grep -q '^TELEGRAM_TOKEN=[0-9]' "$APP_DIR/config.env"; then
   echo "    config.env already has a token - keeping it."
 else
   cp "$HERE/config.env.example" "$APP_DIR/config.env"
   echo
   echo "    Create a bot first: open Telegram, message @BotFather, /newbot, copy the token."
-  read -rp "    Paste the bot token: " TG_TOKEN
+  read -rp "    Paste the bot token: " TG_TOKEN </dev/tty
   echo "    Now open YOUR new bot in Telegram and press Start (or send it 'hi')."
-  read -rp "    Press Enter once you've messaged the bot... " _ || true
+  read -rp "    Press Enter once you've messaged the bot... " _ </dev/tty || true
   TG_CHAT="$(curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates" | python3 -c 'import sys,json
 r=json.load(sys.stdin).get("result",[])
 print(next((str(u.get("message",{}).get("chat",{}).get("id")) for u in reversed(r) if u.get("message")), ""))' 2>/dev/null || true)"
   if [ -z "$TG_CHAT" ]; then
     echo "    Could not auto-detect your chat id (message @userinfobot to get it)."
-    read -rp "    Enter your numeric chat id: " TG_CHAT
+    read -rp "    Enter your numeric chat id: " TG_CHAT </dev/tty
   else
     echo "    Detected chat id: $TG_CHAT"
   fi

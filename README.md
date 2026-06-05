@@ -19,21 +19,29 @@ Features:
 - `sudo` access. Python 3 is already present (OpenWebRX needs it).
 
 ## Install (about 2 minutes)
-1. **Create a Telegram bot:** open Telegram, message **@BotFather**, send
-   `/newbot`, follow the prompts, and copy the token it gives you
-   (looks like `8123456789:AAH...`).
-2. Copy this folder to the OpenWebRX machine, then:
-   ```bash
-   cd owrx-ft8-dx-bot
-   chmod +x install.sh
-   sudo ./install.sh
-   ```
-3. When asked, paste the bot token. Then **open your new bot in Telegram and
-   press Start** (send it any message) so it can reach you - the installer
-   auto-detects your chat id from that.
 
-That's it. You should get a "bot online" message, and the `≡` command menu
-appears in the chat.
+First, **create a Telegram bot:** open Telegram, message **@BotFather**, send
+`/newbot`, follow the prompts, and copy the token (looks like `8123456789:AAH...`).
+
+Then, **SSH into your OpenWebRX machine** (Raspberry Pi or whatever runs it) and
+paste this one line:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/LY5AT/owrx-ft8-dx-bot/main/install.sh && sudo bash install.sh
+```
+
+It downloads everything it needs, then asks you to paste the bot token and to
+press **Start** in your bot (so it can message you - your chat id is detected
+automatically). That's it: you get a "bot online" message and the `≡` command
+menu appears in the chat.
+
+> Prefer not to pipe from the web? Clone the repo and run it locally instead:
+> ```bash
+> git clone https://github.com/LY5AT/owrx-ft8-dx-bot.git
+> cd owrx-ft8-dx-bot && sudo ./install.sh
+> ```
+> Or, if you used the graphical `setup.html` page, drop the `config.env` it gave
+> you next to `install.sh` first and the installer skips all the questions.
 
 ### What the installer changes
 - Installs `mosquitto` (a tiny local MQTT broker, bound to localhost only).
