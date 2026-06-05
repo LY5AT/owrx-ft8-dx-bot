@@ -1,0 +1,10 @@
+# never commit secrets or runtime state
+config.env
+state.json
+state.json.tmp
+*.bak
+*.bak-*
+
+# python
+__pycache__/
+*.pyc
