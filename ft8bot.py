@@ -245,7 +245,10 @@ def load_state():
         base["daily"] = new_daily(today_str())
     state = base
     recent = list(state.get("recent", []))
-    all_recent[:] = list(state.get("all_recent", []))
+    # scrub any previously-logged garbage (impossible 2 m distances) from history
+    all_recent[:] = [e for e in state.get("all_recent", [])
+                     if not (e.get("band") == "2m" and e.get("km") is not None
+                             and e["km"] > MAX_KM)]
 
 
 def save_state():
@@ -460,8 +463,16 @@ def handle_spot(spot):
     coords = grid_to_latlon(grid) if grid else None
     dist = haversine_km(RX_LAT, RX_LON, coords[0], coords[1]) if coords else None
     brg = bearing_deg(RX_LAT, RX_LON, coords[0], coords[1]) if coords else None
+    is_2m = BAND_MIN <= freq <= BAND_MAX
 
-    # firehose: log EVERY decode (any band / distance) + feed the live buffer
+    # Drop garbage outright, even from the raw feed/spots: on 2 m an impossible
+    # distance or a malformed callsign can only be a false decode. (HF long-haul
+    # is legitimate, so the distance ceiling is applied to 2 m only.)
+    if is_2m and ((dist is not None and dist > MAX_KM) or not valid_callsign(call)):
+        log.info("DROP garbage %s %s %s km", call, grid, round(dist) if dist is not None else "?")
+        return
+
+    # firehose: log every (plausible) decode + feed the live buffer
     with state_lock:
         record_recent(now, call, grid, freq, mode, snr, dist)
         if now < state.get("feed_until", 0):
@@ -471,16 +482,8 @@ def handle_spot(spot):
                                 "km": (round(dist) if dist is not None else None)})
 
     # DX alert path: watched mode, 2 m band, has a locator, and in range
-    if (mode not in MODES or not (BAND_MIN <= freq <= BAND_MAX)
+    if (mode not in MODES or not is_2m
             or grid is None or dist is None or dist < effective_min_km()):
-        return
-
-    # false-decode guards
-    if dist > MAX_KM:
-        log.info("DROP impossible distance %s %s %.0f km (>%.0f)", call, grid, dist, MAX_KM)
-        return
-    if not valid_callsign(call):
-        log.info("DROP malformed call %s (%s)", call, grid)
         return
     if MIN_SNR is not None and snr is not None and float(snr) < MIN_SNR:
         return
