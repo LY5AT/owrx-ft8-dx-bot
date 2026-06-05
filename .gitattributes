@@ -1,0 +1,4 @@
+# This project runs on Linux - keep LF endings everywhere in the repo.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
