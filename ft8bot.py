@@ -832,8 +832,8 @@ def on_message(client, userdata, msg):
 
 def main():
     load_state()
-    log.info("%s 2 m DX bot v2 | RX %.4f,%.4f | >=%.0f km | modes=%s | opening>=%d in %dm",
-             RX_CALL, RX_LAT, RX_LON, MIN_KM, ",".join(sorted(MODES)),
+    log.info("%s 2 m DX bot | RX %.4f,%.4f | %.0f-%.0f km | modes=%s | opening>=%d in %dm",
+             RX_CALL, RX_LAT, RX_LON, MIN_KM, MAX_KM, ",".join(sorted(MODES)),
              OPENING_MIN_STATIONS, int(OPENING_WINDOW / 60))
     threading.Thread(target=telegram_poll, name="tg-poll", daemon=True).start()
     threading.Thread(target=ticker, name="ticker", daemon=True).start()
