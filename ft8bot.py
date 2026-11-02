@@ -8,8 +8,8 @@ Telegram alerts. On top of the basic per-station alert it adds:
 
   * sporadic-E OPENING detection (one "band is open" alert on a burst, plus a
     closing summary)
-  * lifetime grid / DXCC tracking with NEW-grid / NEW-country / ODX tags and a
-    nightly digest
+  * lifetime grid / DXCC tracking with NEW-grid / NEW-country / ODX tags
+    (daily stats are kept for /status and /best but never pushed)
   * interactive Telegram commands (/status /last /best /mute /threshold ...)
 
 Config comes from the environment (see config.env, loaded by systemd):
@@ -306,15 +306,11 @@ def send(text, force=False):
 
 # --- stats / records (call under state_lock) ---------------------------------
 def ensure_today():
-    """Roll the daily bucket over at local midnight. Returns a summary string
-    for the *previous* day if there was activity, else None."""
+    """Roll the daily bucket over at local midnight. No summary is sent: the
+    day's numbers are only shown on request (/status, /best)."""
     today = today_str()
-    if state["daily"]["date"] == today:
-        return None
-    prev = state["daily"]
-    summary = format_daily(prev) if prev["count"] > 0 else None
-    state["daily"] = new_daily(today)
-    return summary
+    if state["daily"]["date"] != today:
+        state["daily"] = new_daily(today)
 
 
 def record_stats(call, grid, dist, ccode, country, ts):
@@ -344,25 +340,6 @@ def record_stats(call, grid, dist, ccode, country, ts):
         state["odx"] = {"km": dist, "call": call, "grid": grid, "ts": ts}
         tags.append("\U0001F3C6 ODX")
     return tags
-
-
-def format_daily(d):
-    countries = ", ".join(sorted(set(d["ccodes"].values()))) or "-"
-    best = d["best"]
-    txt = ("\U0001F4CA <b>2 m daily — %s</b>\n"
-           "%d DX spots · %d countries · %d grids\n"
-           "Best: %.0f km %s (%s)") % (
-        d["date"], d["count"], len(set(d["ccodes"].values())), len(d["grids"]),
-        best["km"], best["call"], best["grid"])
-    extra = []
-    if d["new_grids"]:
-        extra.append("%d new grids" % d["new_grids"])
-    if d["new_dxcc"]:
-        extra.append("new DXCC: " + ", ".join(d["new_dxcc"]))
-    if extra:
-        txt += "\n" + " · ".join(extra)
-    txt += "\nCountries: " + countries
-    return txt
 
 
 # --- opening detection (call under state_lock) -------------------------------
@@ -490,7 +467,6 @@ def handle_spot(spot):
 
     key = "%s|%s" % (call, grid[:6].upper())
     needed = CONFIRM_DECODES if mode in CONFIRM_MODES else 1
-    rollover_summary = None
     open_evt = open_txt = None
     do_alert = False
     tags = []
@@ -505,7 +481,7 @@ def handle_spot(spot):
             log.info("HOLD %s %s %.0fkm (%d/%d confirmations)", call, grid, dist, len(seen), needed)
             save_state()
             return
-        rollover_summary = ensure_today()
+        ensure_today()
         last = state["alerts"].get(key, 0)
         if now - last >= EXPIRY:
             state["alerts"][key] = now
@@ -520,8 +496,6 @@ def handle_spot(spot):
             del recent[:-25]
         save_state()
 
-    if rollover_summary:
-        send(rollover_summary)
     if do_alert:
         emoji, label = MODE_TAGS.get(mode, ("\U0001F4E1", mode))
         when = time.strftime("%H:%M", time.gmtime(ts / 1000.0)) if ts else time.strftime("%H:%M", time.gmtime())
@@ -795,7 +769,7 @@ def ticker():
         try:
             feed_flush = None
             with state_lock:
-                summary = ensure_today()
+                ensure_today()
                 close_txt = maybe_close_opening(now)
                 if feed_buffer and now - last_feed_flush[0] >= 18:
                     feed_flush = list(feed_buffer)
@@ -805,8 +779,6 @@ def ticker():
             if close_txt:
                 send(close_txt)
                 log.info("OPENING closed")
-            if summary:
-                send(summary)
             if feed_flush:
                 send(format_feed(feed_flush))
         except Exception:  # noqa: BLE001
